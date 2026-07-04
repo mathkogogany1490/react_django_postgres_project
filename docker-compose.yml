@@ -1,91 +1,97 @@
+services:
 
-  volumes:
-    postgres-data:
-    react-dist:
+  # ==============================
+  # PostgreSQL
+  # ==============================
+  postgres:
+    image: postgres:16
+    container_name: postgres
 
-  services:
+    restart: unless-stopped
 
-    # PostgreSQL
-    postgres:
-      image: postgres:16
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: kogo
+      POSTGRES_PASSWORD: math1106
 
-      container_name: postgres
+    ports:
+      - "5432:5432"
 
-      restart: always
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
 
-      environment:
-        POSTGRES_DB: mydb
-        POSTGRES_USER: kogo
-        POSTGRES_PASSWORD: math1106
+  # ==============================
+  # React Build
+  # ==============================
+  frontend:
+    build:
+      context: ./frontend
 
-      ports:
-        - "5432:5432"
+    container_name: frontend
 
-      volumes:
-        - postgres-data:/var/lib/postgresql/data
+    volumes:
+      - react-dist:/dist
 
-    # React Build
-    frontend:
-      build:
-        context: ./frontend
+    command: >
+      sh -c "
+      npm ci &&
+      npm run build &&
+      rm -rf /dist/* &&
+      cp -r dist/. /dist
+      "
 
-      container_name: frontend
+  # ==============================
+  # Django Backend
+  # ==============================
+  backend:
+    build:
+      context: ./backend
 
-      volumes:
-        - react-dist:/dist
+    container_name: backend
 
-      command: >
-        sh -c "
-        npm ci &&
-        npm run build &&
-        cp -r dist/. /dist
-        "
+    restart: unless-stopped
 
-    # Django Backend
-    backend:
-      build:
-        context: ./backend
+    depends_on:
+      - postgres
 
-      container_name: backend
+    environment:
+      DB_NAME: mydb
+      DB_USER: kogo
+      DB_PASSWORD: math1106
+      DB_HOST: postgres
+      DB_PORT: 5432
 
-      restart: always
+    ports:
+      - "8000:8000"
 
-      ports:
-        - "8000:8000"
+    command: >
+      sh -c "
+      python manage.py migrate &&
+      python manage.py collectstatic --noinput &&
+      gunicorn config.wsgi:application --bind 0.0.0.0:8000
+      "
 
-      depends_on:
-        - postgres
+  # ==============================
+  # Nginx
+  # ==============================
+  nginx:
+    build:
+      context: ./nginx
 
-      environment:
-        DB_NAME: mydb
-        DB_USER: kogo
-        DB_PASSWORD: math1106
-        DB_HOST: postgres
-        DB_PORT: 5432
+    container_name: nginx
 
-      command: >
-        sh -c "
-        python manage.py migrate &&
-        python manage.py collectstatic --noinput &&
-        gunicorn config.wsgi:application --bind 0.0.0.0:8000
-        "
+    restart: unless-stopped
 
-    # Nginx
-    nginx:
-      build:
-        context: ./nginx
+    depends_on:
+      - backend
+      - frontend
 
-      container_name: nginx
+    ports:
+      - "80:80"
 
-      restart: always
+    volumes:
+      - react-dist:/usr/share/nginx/html
 
-      ports:
-        - "80:80"
-
-      depends_on:
-        - frontend
-        - backend
-
-      volumes:
-        - react-dist:/usr/share/nginx/html
-
+volumes:
+  postgres-data:
+  react-dist:
